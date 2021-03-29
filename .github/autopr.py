@@ -1,3 +1,24 @@
+# COPYRIGHT (C) 2006 - 2021, RT-Thread Development Team
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License along
+#  with this program; if not, write to the Free Software Foundation, Inc.,
+#  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+# Change Logs:
+# Date           Author       Notes
+# 2021-03-29     liukang      First version
+#
+
 import os
 import sys
 
@@ -47,6 +68,7 @@ class RttAutoPR:
             result = os.system('git push --force origin master:{}'.format(self.branch_name))
             if result:
                 return 1
+
             cmd = "{0} pr create --title '[update] RT-Thread Robot automatic submission' " \
                   "--body 'merge rt-thread gitee_master branch' " \
                   "--base master --head {1}:{2} " \
@@ -54,6 +76,7 @@ class RttAutoPR:
             result = os.system(cmd)
             if result:
                 return 1
+
         except Exception as e:
             print('[Error] {}'.format(e))
             return 1
