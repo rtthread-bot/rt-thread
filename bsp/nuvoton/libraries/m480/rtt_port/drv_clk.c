@@ -18,7 +18,7 @@
 #include <rtdbg.h>
 #include <stdint.h>
 #include <string.h>
-#include <NuMicro.h>
+#include "NuMicro.h"
 
 
 /* Private define ---------------------------------------------------------------*/
@@ -89,64 +89,44 @@ static struct rt_pm_ops ops =
 
 struct rt_device pm;
 
-
+/* Sleep and power-down mapping */
+const static uint32_t g_au32SleepingMode[PM_SLEEP_MODE_MAX] =
+{
+    0,
+    0,
+    CONFIG_MODE_LIGHT,
+    CONFIG_MODE_DEEP,
+    CONFIG_MODE_STANDBY,
+    CONFIG_MODE_SHUTDOWN
+};
 
 /* pm sleep() entry */
 static void pm_sleep(struct rt_pm *pm, rt_uint8_t mode)
 {
-    SYS_UnlockReg();
+    RT_ASSERT(mode < PM_SLEEP_MODE_MAX);
 
-    switch (mode)
-    {
+    if ((mode == PM_SLEEP_MODE_NONE) || (mode == PM_SLEEP_MODE_IDLE))
+        return;
+
     /*  wake-up source:                                                    */
     /*      PM_SLEEP_MODE_LIGHT : TIMERn                                   */
     /*      PM_SLEEP_MODE_DEEP : TIMERn                                    */
     /*      PM_SLEEP_MODE_STANDBY : wake-up timer  (optional)              */
     /*      PM_SLEEP_MODE_SHUTDOWN : wake-up timer  (optional)             */
 
-    case PM_SLEEP_MODE_NONE:
-    case PM_SLEEP_MODE_IDLE:
-        break;
-
-    case PM_SLEEP_MODE_LIGHT:
-
-        CLK_SetPowerDownMode(CONFIG_MODE_LIGHT);
-        CLK_PowerDown();
-        break;
-
-    case PM_SLEEP_MODE_DEEP:
-
-        CLK_SetPowerDownMode(CONFIG_MODE_DEEP);
-        CLK_PowerDown();
-        break;
-
-    case PM_SLEEP_MODE_STANDBY:
+    SYS_UnlockReg();
 
 #if defined (NU_CLK_INVOKE_WKTMR)
-
+    if ((mode == PM_SLEEP_MODE_SHUTDOWN) || (mode == PM_SLEEP_MODE_STANDBY))
+    {
         /* Enable wake-up timer with pre-defined interval if it is invoked */
         CLK_SET_WKTMR_INTERVAL(WKTMR_INTERVAL);
         CLK_ENABLE_WKTMR();
-#endif
-        CLK_SetPowerDownMode(CONFIG_MODE_STANDBY);
-        CLK_PowerDown();
-        break;
-
-    case PM_SLEEP_MODE_SHUTDOWN:
-
-#if defined (NU_CLK_INVOKE_WKTMR)
-        /* Enable wake-up timer with pre-defined interval if it is invoked */
-        CLK_SET_WKTMR_INTERVAL(WKTMR_INTERVAL);
-        CLK_ENABLE_WKTMR();
-#endif
-        CLK_SetPowerDownMode(CONFIG_MODE_SHUTDOWN);
-        CLK_PowerDown();
-        break;
-
-    default:
-        RT_ASSERT(0);
-        break;
     }
+#endif
+
+    CLK_SetPowerDownMode(g_au32SleepingMode[mode]);
+    CLK_PowerDown();
 
     SYS_LockReg();
 }
@@ -165,8 +145,8 @@ static void pm_run(struct rt_pm *pm, rt_uint8_t mode)
 
     SYS_UnlockReg();
 
-    /* Switch run mdoe frequency using PLL + HXT if HXT is enabled.
-       Otherwise, the systme clock will use PLL + HIRC. */
+    /* Switch run mode frequency using PLL + HXT if HXT is enabled.
+       Otherwise, the system clock will use PLL + HIRC. */
     switch (mode)
     {
     case PM_RUN_MODE_HIGH_SPEED:
@@ -209,7 +189,7 @@ static void hw_timer_init(void)
     CLK_EnableModuleClock(PM_TIMER_MODULE);
     SYS_LockReg();
 
-    /* Initialise timer and enable wakeup function. */
+    /* Initialize timer and enable wakeup function. */
     TIMER_Open(PM_TIMER, TIMER_CONTINUOUS_MODE, 1);
     TIMER_SET_PRESCALE_VALUE(PM_TIMER, 0);
     TIMER_EnableInt(PM_TIMER);
@@ -262,7 +242,7 @@ static void pm_timer_start(struct rt_pm *pm, rt_uint32_t timeout)
     if (timeout == RT_TICK_MAX)
         return;
 
-    /* start pm timer to compenstate the os tick in power down mode */
+    /* start pm timer to compensate the os tick in power down mode */
     tick = pm_tick_from_os_tick(timeout);
     TIMER_SET_CMP_VALUE(PM_TIMER, tick);
     TIMER_Start(PM_TIMER);
@@ -277,7 +257,7 @@ static void pm_timer_stop(struct rt_pm *pm)
 }
 
 
-/* pm device driver initialise. */
+/* pm device driver initialize. */
 int rt_hw_pm_init(void)
 {
     rt_uint8_t timer_mask;

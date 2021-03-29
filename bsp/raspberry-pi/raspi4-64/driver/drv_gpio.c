@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2020, RT-Thread Development Team
+ * Copyright (c) 2006-2021, RT-Thread Development Team
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -71,7 +71,7 @@ static void raspi_pin_write(struct rt_device *dev, rt_base_t pin, rt_base_t valu
         {
             GPIO_REG_GPCLR1(GPIO_BASE) = 1 << (pin % 32);
         }
-        
+
     }
 }
 
@@ -103,6 +103,7 @@ static const struct rt_pin_ops ops =
     raspi_pin_attach_irq,
     raspi_pin_detach_irq,
     raspi_pin_irq_enable,
+    RT_NULL,
 };
 #endif
 

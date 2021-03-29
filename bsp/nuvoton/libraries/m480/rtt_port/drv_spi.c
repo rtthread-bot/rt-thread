@@ -11,7 +11,15 @@
 ******************************************************************************/
 #include <rtconfig.h>
 
-#if defined(BSP_USING_SPI) || defined(BSP_USING_QSPI)
+#if defined(BSP_USING_SPI)
+
+#define LOG_TAG                 "drv.spi"
+#define DBG_ENABLE
+#define DBG_SECTION_NAME        LOG_TAG
+#define DBG_LEVEL               DBG_INFO
+#define DBG_COLOR
+#include <rtdbg.h>
+
 #include <rthw.h>
 #include <rtdevice.h>
 #include <rtdef.h>
@@ -22,7 +30,7 @@
 /* Private define ---------------------------------------------------------------*/
 
 #ifndef NU_SPI_USE_PDMA_MIN_THRESHOLD
-    #define NU_SPI_USE_PDMA_MIN_THRESHOLD 128
+    #define NU_SPI_USE_PDMA_MIN_THRESHOLD (128)
 #endif
 
 enum
@@ -52,9 +60,8 @@ static int nu_spi_register_bus(struct nu_spi *spi_bus, const char *name);
 static rt_uint32_t nu_spi_bus_xfer(struct rt_spi_device *device, struct rt_spi_message *message);
 static rt_err_t nu_spi_bus_configure(struct rt_spi_device *device, struct rt_spi_configuration *configuration);
 
-#if defined(BSP_USING_SPI_PDMA) || defined(BSP_USING_QSPI_PDMA)
+#if defined(BSP_USING_SPI_PDMA)
     static void nu_pdma_spi_rx_cb(void *pvUserData, uint32_t u32EventFilter);
-    static void nu_pdma_spi_tx_cb(void *pvUserData, uint32_t u32EventFilter);
     static rt_err_t nu_pdma_spi_rx_config(struct nu_spi *spi_bus, uint8_t *pu8Buf, int32_t i32RcvLen, uint8_t bytes_per_word);
     static rt_err_t nu_pdma_spi_tx_config(struct nu_spi *spi_bus, const uint8_t *pu8Buf, int32_t i32SndLen, uint8_t bytes_per_word);
     static rt_size_t nu_spi_pdma_transmit(struct nu_spi *spi_bus, const uint8_t *send_addr, uint8_t *recv_addr, int length, uint8_t bytes_per_word);
@@ -62,10 +69,6 @@ static rt_err_t nu_spi_bus_configure(struct rt_spi_device *device, struct rt_spi
 /* Public functions -------------------------------------------------------------*/
 void nu_spi_transfer(struct nu_spi *spi_bus, uint8_t *tx, uint8_t *rx, int length, uint8_t bytes_per_word);
 void nu_spi_drain_rxfifo(SPI_T *spi_base);
-
-#if defined(BSP_USING_SPI_PDMA) || defined(BSP_USING_QSPI_PDMA)
-    rt_err_t nu_hw_spi_pdma_allocate(struct nu_spi *spi_bus);
-#endif
 
 /* Private variables ------------------------------------------------------------*/
 static struct rt_spi_ops nu_spi_poll_ops =
@@ -193,7 +196,7 @@ static rt_err_t nu_spi_bus_configure(struct rt_spi_device *device,
     u32BusClock = SPI_SetBusClock(spi_bus->spi_base, configuration->max_hz);
     if (configuration->max_hz > u32BusClock)
     {
-        rt_kprintf("%s clock max frequency is %dHz (!= %dHz)\n", spi_bus->name, u32BusClock, configuration->max_hz);
+        LOG_W("%s clock max frequency is %dHz (!= %dHz)\n", spi_bus->name, u32BusClock, configuration->max_hz);
         configuration->max_hz = u32BusClock;
     }
 
@@ -235,21 +238,16 @@ exit_nu_spi_bus_configure:
     return -(ret);
 }
 
-#if defined(BSP_USING_SPI_PDMA) || defined(BSP_USING_QSPI_PDMA)
+#if defined(BSP_USING_SPI_PDMA)
 static void nu_pdma_spi_rx_cb(void *pvUserData, uint32_t u32EventFilter)
 {
-    struct nu_spi *spi_bus;
-    spi_bus = (struct nu_spi *)pvUserData;
+    rt_err_t result;
+    struct nu_spi *spi_bus = (struct nu_spi *)pvUserData;
 
     RT_ASSERT(spi_bus != RT_NULL);
 
-    /* Get base address of spi register */
-    SPI_T *spi_base = spi_bus->spi_base;
-
-    if (u32EventFilter & NU_PDMA_EVENT_TRANSFER_DONE)
-    {
-        SPI_DISABLE_RX_PDMA(spi_base);  // Stop DMA TX transfer
-    }
+    result = rt_sem_release(spi_bus->m_psSemBus);
+    RT_ASSERT(result == RT_EOK);
 }
 static rt_err_t nu_pdma_spi_rx_config(struct nu_spi *spi_bus, uint8_t *pu8Buf, int32_t i32RcvLen, uint8_t bytes_per_word)
 {
@@ -299,24 +297,6 @@ exit_nu_pdma_spi_rx_config:
     return result;
 }
 
-static void nu_pdma_spi_tx_cb(void *pvUserData, uint32_t u32EventFilter)
-{
-    struct nu_spi *spi_bus;
-    spi_bus = (struct nu_spi *)pvUserData;
-
-    RT_ASSERT(spi_bus != RT_NULL);
-
-    /* Get base address of spi register */
-    SPI_T *spi_base = spi_bus->spi_base;
-
-    if (u32EventFilter & NU_PDMA_EVENT_TRANSFER_DONE)
-    {
-        SPI_DISABLE_TX_PDMA(spi_base);  // Stop DMA TX transfer
-    }
-    rt_sem_release(spi_bus->m_psSemBus);
-
-}
-
 static rt_err_t nu_pdma_spi_tx_config(struct nu_spi *spi_bus, const uint8_t *pu8Buf, int32_t i32SndLen, uint8_t bytes_per_word)
 {
     rt_err_t result = RT_EOK;
@@ -327,15 +307,6 @@ static rt_err_t nu_pdma_spi_tx_config(struct nu_spi *spi_bus, const uint8_t *pu8
     SPI_T *spi_base = spi_bus->spi_base;
 
     rt_uint8_t spi_pdma_tx_chid = spi_bus->pdma_chanid_tx;
-
-    result = nu_pdma_callback_register(spi_pdma_tx_chid,
-                                       nu_pdma_spi_tx_cb,
-                                       (void *)spi_bus,
-                                       NU_PDMA_EVENT_TRANSFER_DONE);
-    if (result != RT_EOK)
-    {
-        goto exit_nu_pdma_spi_tx_config;
-    }
 
     if (pu8Buf == RT_NULL)
     {
@@ -373,25 +344,39 @@ exit_nu_pdma_spi_tx_config:
 static rt_size_t nu_spi_pdma_transmit(struct nu_spi *spi_bus, const uint8_t *send_addr, uint8_t *recv_addr, int length, uint8_t bytes_per_word)
 {
     rt_err_t result = RT_EOK;
+    rt_uint32_t u32Offset = 0;
+    rt_uint32_t u32TransferCnt = length / bytes_per_word;
+    rt_uint32_t u32TxCnt = 0;
 
     /* Get base address of spi register */
     SPI_T *spi_base = spi_bus->spi_base;
 
-    result = nu_pdma_spi_rx_config(spi_bus, recv_addr, length, bytes_per_word);
-    RT_ASSERT(result == RT_EOK);
-    result = nu_pdma_spi_tx_config(spi_bus, send_addr, length, bytes_per_word);
-    RT_ASSERT(result == RT_EOK);
+    do
+    {
+        u32TxCnt = (u32TransferCnt > NU_PDMA_MAX_TXCNT) ? NU_PDMA_MAX_TXCNT : u32TransferCnt;
+        result = nu_pdma_spi_rx_config(spi_bus, (recv_addr == RT_NULL) ? recv_addr : &recv_addr[u32Offset], (u32TxCnt * bytes_per_word), bytes_per_word);
+        RT_ASSERT(result == RT_EOK);
 
-    /* Trigger TX/RX at the same time. */
-    SPI_TRIGGER_TX_PDMA(spi_base);
-    SPI_TRIGGER_RX_PDMA(spi_base);
+        result = nu_pdma_spi_tx_config(spi_bus, (send_addr == RT_NULL) ? send_addr : &send_addr[u32Offset], (u32TxCnt * bytes_per_word), bytes_per_word);
+        RT_ASSERT(result == RT_EOK);
 
-    /* Wait PDMA transfer done */
-    rt_sem_take(spi_bus->m_psSemBus, RT_WAITING_FOREVER);
+        /* Trigger TX/RX PDMA transfer. */
+        SPI_TRIGGER_TX_RX_PDMA(spi_base);
 
-    while (SPI_IS_BUSY(spi_base));
+        /* Wait RX-PDMA transfer done */
+        result = rt_sem_take(spi_bus->m_psSemBus, RT_WAITING_FOREVER);
+        RT_ASSERT(result == RT_EOK);
 
-    return result;
+        /* Stop TX/RX DMA transfer. */
+        SPI_DISABLE_TX_RX_PDMA(spi_base);
+
+        u32TransferCnt -= u32TxCnt;
+        u32Offset += u32TxCnt;
+
+    }
+    while (u32TransferCnt > 0);
+
+    return length;
 }
 
 rt_err_t nu_hw_spi_pdma_allocate(struct nu_spi *spi_bus)
@@ -409,6 +394,7 @@ rt_err_t nu_hw_spi_pdma_allocate(struct nu_spi *spi_bus)
     }
 
     spi_bus->m_psSemBus = rt_sem_create("spibus_sem", 0, RT_IPC_FLAG_FIFO);
+    RT_ASSERT(spi_bus->m_psSemBus != RT_NULL);
 
     return RT_EOK;
 
@@ -416,7 +402,7 @@ exit_nu_hw_spi_pdma_allocate:
 
     return -(RT_ERROR);
 }
-#endif /* #if defined(BSP_USING_SPI_PDMA) || defined(BSP_USING_QSPI_PDMA) */
+#endif /* #if defined(BSP_USING_SPI_PDMA) */
 
 void nu_spi_drain_rxfifo(SPI_T *spi_base)
 {
@@ -432,11 +418,11 @@ void nu_spi_drain_rxfifo(SPI_T *spi_base)
 static int nu_spi_read(SPI_T *spi_base, uint8_t *recv_addr, uint8_t bytes_per_word)
 {
     int size = 0;
-    uint32_t val;
 
     // Read RX data
     if (!SPI_GET_RX_FIFO_EMPTY_FLAG(spi_base))
     {
+        uint32_t val;
         // Read data from SPI RX FIFO
         switch (bytes_per_word)
         {
@@ -454,6 +440,9 @@ static int nu_spi_read(SPI_T *spi_base, uint8_t *recv_addr, uint8_t bytes_per_wo
             break;
         case 1:
             *recv_addr = SPI_READ_RX(spi_base);
+            break;
+        default:
+            LOG_E("Data length is not supported.\n");
             break;
         }
         size = bytes_per_word;
@@ -480,6 +469,9 @@ static int nu_spi_write(SPI_T *spi_base, const uint8_t *send_addr, uint8_t bytes
         break;
     case 1:
         SPI_WRITE_TX(spi_base, *((uint8_t *)send_addr));
+        break;
+    default:
+        LOG_E("Data length is not supported.\n");
         break;
     }
 
@@ -534,7 +526,7 @@ static void nu_spi_transmission_with_poll(struct nu_spi *spi_bus,
         }
     } // else
 
-    /* Wait RX or drian RX-FIFO */
+    /* Wait RX or drain RX-FIFO */
     if (recv_addr)
     {
         // Wait SPI transmission done
@@ -565,8 +557,8 @@ void nu_spi_transfer(struct nu_spi *spi_bus, uint8_t *tx, uint8_t *rx, int lengt
 #if defined(BSP_USING_SPI_PDMA)
     /* DMA transfer constrains */
     if ((spi_bus->pdma_chanid_rx >= 0) &&
-            (!(uint32_t)tx % bytes_per_word) &&
-            (!(uint32_t)rx % bytes_per_word) &&
+            !((uint32_t)tx % bytes_per_word) &&
+            !((uint32_t)rx % bytes_per_word) &&
             (bytes_per_word != 3) &&
             (length >= NU_SPI_USE_PDMA_MIN_THRESHOLD))
         nu_spi_pdma_transmit(spi_bus, tx, rx, length, bytes_per_word);
@@ -594,7 +586,7 @@ static rt_uint32_t nu_spi_bus_xfer(struct rt_spi_device *device, struct rt_spi_m
     if ((message->length % bytes_per_word) != 0)
     {
         /* Say bye. */
-        rt_kprintf("%s: error payload length(%d%%%d != 0).\n", spi_bus->name, message->length, bytes_per_word);
+        LOG_E("%s: error payload length(%d%%%d != 0).\n", spi_bus->name, message->length, bytes_per_word);
         return 0;
     }
 
@@ -653,7 +645,7 @@ static int rt_hw_spi_init(void)
         {
             if (nu_hw_spi_pdma_allocate(&nu_spi_arr[i]) != RT_EOK)
             {
-                rt_kprintf("Failed to allocate DMA channels for %s. We will use poll-mode for this bus.\n", nu_spi_arr[i].name);
+                LOG_W("Failed to allocate DMA channels for %s. We will use poll-mode for this bus.\n", nu_spi_arr[i].name);
             }
         }
 #endif

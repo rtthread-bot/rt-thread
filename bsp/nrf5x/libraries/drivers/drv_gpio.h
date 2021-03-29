@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2018, RT-Thread Development Team
+ * Copyright (c) 2006-2021, RT-Thread Development Team
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -13,7 +13,6 @@
 
 #include <board.h>
 #include <rtdevice.h>
-#include <nrf52840.h>
 #include <hal/nrf_gpio.h>
 #include <drivers/include/nrfx_gpiote.h>
 

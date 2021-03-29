@@ -102,7 +102,6 @@ menu "Hardware Drivers Config"
         menuconfig BSP_USING_ONCHIP_RTC
             bool "Enable RTC"
             select RT_USING_RTC
-            select RT_USING_LIBC
             default n
             if BSP_USING_ONCHIP_RTC
                 choice
@@ -215,7 +214,7 @@ menu "Hardware Drivers Config"
             select RT_USING_PWM
             if BSP_USING_PWM
                 config BSP_USING_PWM1
-                    bool "Using PWM1
+                    bool "Using PWM1"
                     default n
                     if BSP_USING_PWM1
                         config BSP_USING_PWM1_CH1

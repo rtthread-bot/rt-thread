@@ -13,16 +13,15 @@
 #include <rtconfig.h>
 
 #if defined(BSP_USING_WDT)
-
 #include <rthw.h>
 #include <rtdevice.h>
 #include <rtdbg.h>
-#include <NuMicro.h>
+#include "NuMicro.h"
 
 /*-------------------------------------------------------------------------------*/
 /* watchdog timer timeout look up table                                          */
 /*-------------------------------------------------------------------------------*/
-/* clock = LIRC 10Khz.                                                           */
+/* clock = LIRC 10KHz.                                                           */
 /*                                                                               */
 /*      working hz   toutsel     exp     cycles      timeout (s)                 */
 /*      10000        0           4       16          0.0016                      */
@@ -34,7 +33,7 @@
 /*                   6           16      65536       6.5536                      */
 /*                   7           18      262144      26.2144                     */
 /*-------------------------------------------------------------------------------*/
-/* clock = LXT 32.76Khz.                                                         */
+/* clock = LXT 32768Hz.                                                          */
 /*                                                                               */
 /*      working hz   toutsel     exp     cycles      timeout (s)                 */
 /*      32768        0           4       16          0.0005                      */
@@ -46,7 +45,7 @@
 /*                   6           16      65536       2.0000                      */
 /*                   7           18      262144      8.0000                      */
 /*-------------------------------------------------------------------------------*/
-/* clock = 192Mhz HCLK divide 2048 = 93750 hz.                                   */
+/* clock = 192MHz HCLK divide 2048 = 93750 Hz.                                   */
 /*                                                                               */
 /*      working hz   toutsel     exp     cycles      timeout (s)                 */
 /*      93750        0           4       16          0.00017                     */
@@ -69,10 +68,10 @@
 #define MIN_CYCLES                  (1024)
 
 
-/* Macros to convert the value bewtween the timeout interval and the soft time iterations. */
+/* Macros to convert the value between the timeout interval and the soft time iterations. */
 #define ROUND_TO_INTEGER(value)         ((int)(((value) * 10 + 5) / 10))
-#define CONV_SEC_TO_IT(hz, secs)        ROUND_TO_INTEGER((float)((secs) * (hz)) / (float)MIN_CYCLES)
-#define CONV_IT_TO_SEC(hz, iterations)  ROUND_TO_INTEGER((float)(iterations * MIN_CYCLES) / (float)hz)
+#define CONV_SEC_TO_IT(hz, secs)        (ROUND_TO_INTEGER((float)((secs) * (hz)) / (float)(MIN_CYCLES)))
+#define CONV_IT_TO_SEC(hz, iterations)  (ROUND_TO_INTEGER((float)((iterations) * (MIN_CYCLES)) / (float)(hz)))
 
 
 /* Private typedef --------------------------------------------------------------*/
@@ -92,6 +91,7 @@ typedef volatile struct soft_time_handle soft_time_handle_t;
 /* Private functions ------------------------------------------------------------*/
 static rt_err_t wdt_init(rt_watchdog_t *dev);
 static rt_err_t wdt_control(rt_watchdog_t *dev, int cmd, void *args);
+static uint32_t wdt_get_module_clock(void);
 static uint32_t wdt_get_working_hz(void);
 static void soft_time_init(soft_time_handle_t *const soft_time);
 static void soft_time_setup(uint32_t wanted_sec, uint32_t hz, soft_time_handle_t *const soft_time);
@@ -101,9 +101,7 @@ static void soft_time_feed_dog(soft_time_handle_t *const soft_time);
     static int wdt_pm_suspend(const struct rt_device *device, rt_uint8_t mode);
     static void wdt_pm_resume(const struct rt_device *device, rt_uint8_t mode);
     static int wdt_pm_frequency_change(const struct rt_device *device, rt_uint8_t mode);
-
     static void soft_time_freqeucy_change(uint32_t new_hz, soft_time_handle_t *const soft_time);
-
 #endif
 
 /* Public functions -------------------------------------------------------------*/
@@ -121,14 +119,11 @@ static struct rt_watchdog_ops ops_wdt =
 
 static struct rt_device_pm_ops device_pm_ops =
 {
-
     .suspend = wdt_pm_suspend,
     .resume = wdt_pm_resume,
     .frequency_change = wdt_pm_frequency_change
 };
 #endif
-
-
 
 
 #if defined(RT_USING_PM)
@@ -185,12 +180,6 @@ static void wdt_pm_resume(const struct rt_device *device, rt_uint8_t mode)
 }
 
 
-static uint32_t wdt_get_module_clock(void)
-{
-    return (CLK_GetModuleClockSource(WDT_MODULE) << CLK_CLKSEL1_WDTSEL_Pos);
-}
-
-
 /* device pm frequency_change() entry. */
 static int wdt_pm_frequency_change(const struct rt_device *device, rt_uint8_t mode)
 {
@@ -204,7 +193,7 @@ static int wdt_pm_frequency_change(const struct rt_device *device, rt_uint8_t mo
         if (new_hz == soft_time.clock_hz)
             return (int)(RT_EOK);
 
-        /* frequency change occurs in critial section */
+        /* frequency change occurs in critical section */
         soft_time_freqeucy_change(new_hz, &soft_time);
     }
 
@@ -241,7 +230,7 @@ static void soft_time_freqeucy_change(uint32_t new_hz, soft_time_handle_t *const
 
     if (corner_case)
     {
-        LOG_W("pm frequency change cause wdt intenal left iterations convert to 0.\n\r  \
+        LOG_W("pm frequency change cause wdt internal left iterations convert to 0.\n\r  \
                wdt driver will add another 1 iteration for this corner case.");
     }
 }
@@ -263,7 +252,7 @@ static void hw_wdt_init(void)
 }
 
 
-/* wdt device driver initialise. */
+/* wdt device driver initialize. */
 int rt_hw_wdt_init(void)
 {
     rt_err_t ret;
@@ -278,19 +267,24 @@ int rt_hw_wdt_init(void)
     rt_pm_device_register((struct rt_device *)&device_wdt, &device_pm_ops);
 #endif
 
-
     return (int)ret;
 }
 INIT_BOARD_EXPORT(rt_hw_wdt_init);
 
 
-/* Reigster rt-thread device.init() entry. */
+/* Register rt-thread device.init() entry. */
 static rt_err_t wdt_init(rt_watchdog_t *dev)
 {
     soft_time_init(&soft_time);
     hw_wdt_init();
 
     return RT_EOK;
+}
+
+
+static uint32_t wdt_get_module_clock(void)
+{
+    return (CLK_GetModuleClockSource(WDT_MODULE) << CLK_CLKSEL1_WDTSEL_Pos);
 }
 
 
@@ -414,6 +408,7 @@ static rt_err_t wdt_control(rt_watchdog_t *dev, int cmd, void *args)
 
     case RT_DEVICE_CTRL_WDT_START:
 
+        WDT_RESET_COUNTER();
         WDT_Open(MIN_TOUTSEL, WDT_RESET_DELAY_1026CLK, TRUE, TRUE);
         WDT_EnableInt();
         break;

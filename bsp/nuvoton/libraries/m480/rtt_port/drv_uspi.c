@@ -12,11 +12,19 @@
 #include <rtconfig.h>
 
 #if defined(BSP_USING_USPI)
+
+#define LOG_TAG                 "drv.uspi"
+#define DBG_ENABLE
+#define DBG_SECTION_NAME        LOG_TAG
+#define DBG_LEVEL               DBG_INFO
+#define DBG_COLOR
+#include <rtdbg.h>
+
 #include <rthw.h>
 #include <rtdevice.h>
 #include <rtdef.h>
 
-#include <NuMicro.h>
+#include "NuMicro.h"
 #include <nu_bitutil.h>
 
 #if defined(BSP_USING_USPI_PDMA)
@@ -63,7 +71,6 @@ static void nu_uspi_drain_rxfifo(USPI_T *uspi_base);
 
 #if defined(BSP_USING_USPI_PDMA)
     static void nu_pdma_uspi_rx_cb(void *pvUserData, uint32_t u32EventFilter);
-    static void nu_pdma_uspi_tx_cb(void *pvUserData, uint32_t u32EventFilter);
     static rt_err_t nu_pdma_uspi_rx_config(struct nu_uspi *uspi_bus, uint8_t *pu8Buf, int32_t i32RcvLen, uint8_t bytes_per_word);
     static rt_err_t nu_pdma_uspi_tx_config(struct nu_uspi *uspi_bus, const uint8_t *pu8Buf, int32_t i32SndLen, uint8_t bytes_per_word);
     static rt_size_t nu_uspi_pdma_transmit(struct nu_uspi *uspi_bus, const uint8_t *send_addr, uint8_t *recv_addr, int length, uint8_t bytes_per_word);
@@ -162,7 +169,7 @@ static rt_err_t nu_uspi_bus_configure(struct rt_spi_device *device,
     u32BusClock = USPI_SetBusClock(uspi_bus->uspi_base, configuration->max_hz);
     if (configuration->max_hz > u32BusClock)
     {
-        rt_kprintf("%s clock max frequency is %dHz (!= %dHz)\n", uspi_bus->name, u32BusClock, configuration->max_hz);
+        LOG_W("%s clock max frequency is %dHz (!= %dHz)\n", uspi_bus->name, u32BusClock, configuration->max_hz);
         configuration->max_hz = u32BusClock;
     }
 
@@ -187,16 +194,16 @@ static rt_err_t nu_uspi_bus_configure(struct rt_spi_device *device,
         if (configuration->mode & RT_SPI_MSB)
         {
             /* Set sequence to MSB first */
-            SPI_SET_MSB_FIRST(uspi_bus->uspi_base);
+            USPI_SET_MSB_FIRST(uspi_bus->uspi_base);
         }
         else
         {
             /* Set sequence to LSB first */
-            SPI_SET_LSB_FIRST(uspi_bus->uspi_base);
+            USPI_SET_LSB_FIRST(uspi_bus->uspi_base);
         }
     }
 
-    /* Clear SPI RX FIFO */
+    /* Clear USPI RX FIFO */
     nu_uspi_drain_rxfifo(uspi_bus->uspi_base);
 
 exit_nu_uspi_bus_configure:
@@ -207,22 +214,18 @@ exit_nu_uspi_bus_configure:
 #if defined(BSP_USING_USPI_PDMA)
 static void nu_pdma_uspi_rx_cb(void *pvUserData, uint32_t u32EventFilter)
 {
-    struct nu_uspi *uspi_bus;
-    uspi_bus = (struct nu_uspi *)pvUserData;
+    rt_err_t result;
+    struct nu_uspi *uspi_bus = (struct nu_uspi *)pvUserData;
 
     RT_ASSERT(uspi_bus != RT_NULL);
 
-    /* Get base address of uspi register */
-    USPI_T *uspi_base = uspi_bus->uspi_base;
-
-    if (u32EventFilter & NU_PDMA_EVENT_TRANSFER_DONE)
-    {
-        USPI_DISABLE_RX_PDMA(uspi_base);  // Stop DMA TX transfer
-    }
+    result = rt_sem_release(uspi_bus->m_psSemBus);
+    RT_ASSERT(result == RT_EOK);
 }
+
 static rt_err_t nu_pdma_uspi_rx_config(struct nu_uspi *uspi_bus, uint8_t *pu8Buf, int32_t i32RcvLen, uint8_t bytes_per_word)
 {
-    rt_err_t result = RT_EOK;
+    rt_err_t result;
     rt_uint8_t *dst_addr = NULL;
     nu_pdma_memctrl_t memctrl = eMemCtl_Undefined;
 
@@ -269,27 +272,9 @@ exit_nu_pdma_uspi_rx_config:
     return result;
 }
 
-static void nu_pdma_uspi_tx_cb(void *pvUserData, uint32_t u32EventFilter)
-{
-    struct nu_uspi *uspi_bus;
-    uspi_bus = (struct nu_uspi *)pvUserData;
-
-    RT_ASSERT(uspi_bus != RT_NULL);
-
-    /* Get base address of uspi register */
-    USPI_T *uspi_base = uspi_bus->uspi_base;
-
-    if (u32EventFilter & NU_PDMA_EVENT_TRANSFER_DONE)
-    {
-        USPI_DISABLE_TX_PDMA(uspi_base);  // Stop DMA TX transfer
-    }
-    rt_sem_release(uspi_bus->m_psSemBus);
-
-}
-
 static rt_err_t nu_pdma_uspi_tx_config(struct nu_uspi *uspi_bus, const uint8_t *pu8Buf, int32_t i32SndLen, uint8_t bytes_per_word)
 {
-    rt_err_t result = RT_EOK;
+    rt_err_t result;
     rt_uint8_t *src_addr = NULL;
     nu_pdma_memctrl_t memctrl = eMemCtl_Undefined;
 
@@ -297,15 +282,6 @@ static rt_err_t nu_pdma_uspi_tx_config(struct nu_uspi *uspi_bus, const uint8_t *
     USPI_T *uspi_base = uspi_bus->uspi_base;
 
     rt_uint8_t uspi_pdma_tx_chid = uspi_bus->pdma_chanid_tx;
-
-    result = nu_pdma_callback_register(uspi_pdma_tx_chid,
-                                       nu_pdma_uspi_tx_cb,
-                                       (void *)uspi_bus,
-                                       NU_PDMA_EVENT_TRANSFER_DONE);
-    if (result != RT_EOK)
-    {
-        goto exit_nu_pdma_uspi_tx_config;
-    }
 
     if (pu8Buf == RT_NULL)
     {
@@ -339,11 +315,11 @@ exit_nu_pdma_uspi_tx_config:
 
 
 /**
- * SPI PDMA transfer
- */
+ * USPI PDMA transfer
+ **/
 static rt_size_t nu_uspi_pdma_transmit(struct nu_uspi *uspi_bus, const uint8_t *send_addr, uint8_t *recv_addr, int length, uint8_t bytes_per_word)
 {
-    rt_err_t result = RT_EOK;
+    rt_err_t result;
 
     /* Get base address of uspi register */
     USPI_T *uspi_base = uspi_bus->uspi_base;
@@ -354,13 +330,14 @@ static rt_size_t nu_uspi_pdma_transmit(struct nu_uspi *uspi_bus, const uint8_t *
     RT_ASSERT(result == RT_EOK);
 
     /* Trigger TX/RX at the same time. */
-    USPI_TRIGGER_TX_PDMA(uspi_base);
-    USPI_TRIGGER_RX_PDMA(uspi_base);
+    USPI_TRIGGER_TX_RX_PDMA(uspi_base);
 
     /* Wait PDMA transfer done */
-    rt_sem_take(uspi_bus->m_psSemBus, RT_WAITING_FOREVER);
+    result = rt_sem_take(uspi_bus->m_psSemBus, RT_WAITING_FOREVER);
+    RT_ASSERT(result == RT_EOK);
 
-    while (USPI_IS_BUSY(uspi_base));
+    /* Stop DMA TX/RX transfer */
+    USPI_DISABLE_TX_RX_PDMA(uspi_base);
 
     return result;
 }
@@ -380,6 +357,7 @@ static rt_err_t nu_hw_uspi_pdma_allocate(struct nu_uspi *uspi_bus)
     }
 
     uspi_bus->m_psSemBus = rt_sem_create("uspibus_sem", 0, RT_IPC_FLAG_FIFO);
+    RT_ASSERT(uspi_bus->m_psSemBus != RT_NULL);
 
     return RT_EOK;
 
@@ -404,11 +382,11 @@ static void nu_uspi_drain_rxfifo(USPI_T *uspi_base)
 static int nu_uspi_read(USPI_T *uspi_base, uint8_t *recv_addr, uint8_t bytes_per_word)
 {
     int size = 0;
-    uint32_t val;
 
     // Read RX data
     if (!USPI_GET_RX_EMPTY_FLAG(uspi_base))
     {
+        uint32_t val;
         // Read data from USPI RX FIFO
         switch (bytes_per_word)
         {
@@ -418,6 +396,9 @@ static int nu_uspi_read(USPI_T *uspi_base, uint8_t *recv_addr, uint8_t bytes_per
             break;
         case 1:
             *recv_addr = USPI_READ_RX(uspi_base);
+            break;
+        default:
+            LOG_E("Data length is not supported.\n");
             break;
         }
         size = bytes_per_word;
@@ -430,7 +411,7 @@ static int nu_uspi_write(USPI_T *uspi_base, const uint8_t *send_addr, uint8_t by
     // Wait USPI TX send data
     while (USPI_GET_TX_FULL_FLAG(uspi_base));
 
-    // Input data to SPI TX
+    // Input data to USPI TX
     switch (bytes_per_word)
     {
     case 2:
@@ -439,14 +420,17 @@ static int nu_uspi_write(USPI_T *uspi_base, const uint8_t *send_addr, uint8_t by
     case 1:
         USPI_WRITE_TX(uspi_base, *((uint8_t *)send_addr));
         break;
+    default:
+        LOG_E("Data length is not supported.\n");
+        break;
     }
 
     return bytes_per_word;
 }
 
 /**
- * @brief SPI bus polling
- * @param dev : The pointer of the specified SPI module.
+ * @brief USPI bus polling
+ * @param dev : The pointer of the specified USPI module.
  * @param send_addr : Source address
  * @param recv_addr : Destination address
  * @param length    : Data length
@@ -471,10 +455,11 @@ static void nu_uspi_transmission_with_poll(struct nu_uspi *uspi_bus,
         uspi_bus->dummy = 0;
         while (length > 0)
         {
-            /* Input data to SPI TX FIFO */
+            /* Input data to USPI TX FIFO */
             length -= nu_uspi_write(uspi_base, (const uint8_t *)&uspi_bus->dummy, bytes_per_word);
 
-            /* Read data from RX FIFO */
+            /* Read data from USPI RX FIFO */
+            while (USPI_GET_RX_EMPTY_FLAG(uspi_base));
             recv_addr += nu_uspi_read(uspi_base, recv_addr, bytes_per_word);
         }
     } // else if (send_addr == RT_NULL && recv_addr != RT_NULL)
@@ -483,19 +468,20 @@ static void nu_uspi_transmission_with_poll(struct nu_uspi *uspi_bus,
     {
         while (length > 0)
         {
-            /* Input data to SPI TX FIFO */
+            /* Input data to USPI TX FIFO */
             send_addr += nu_uspi_write(uspi_base, send_addr, bytes_per_word);
             length -= bytes_per_word;
 
-            /* Read data from RX FIFO */
+            /* Read data from USPI RX FIFO */
+            while (USPI_GET_RX_EMPTY_FLAG(uspi_base));
             recv_addr += nu_uspi_read(uspi_base, recv_addr, bytes_per_word);
         }
     } // else
 
-    /* Wait RX or drian RX-FIFO */
+    /* Wait USPI RX or drain USPI RX-FIFO */
     if (recv_addr)
     {
-        // Wait SPI transmission done
+        // Wait USPI transmission done
         while (USPI_IS_BUSY(uspi_base))
         {
             while (!USPI_GET_RX_EMPTY_FLAG(uspi_base))
@@ -511,7 +497,7 @@ static void nu_uspi_transmission_with_poll(struct nu_uspi *uspi_bus,
     }
     else
     {
-        /* Clear SPI RX FIFO */
+        /* Clear USPI RX FIFO */
         nu_uspi_drain_rxfifo(uspi_base);
     }
 }
@@ -519,11 +505,10 @@ static void nu_uspi_transmission_with_poll(struct nu_uspi *uspi_bus,
 static void nu_uspi_transfer(struct nu_uspi *uspi_bus, uint8_t *tx, uint8_t *rx, int length, uint8_t bytes_per_word)
 {
 #if defined(BSP_USING_USPI_PDMA)
-    /* DMA transfer constrains */
+    /* PDMA transfer constrains */
     if ((uspi_bus->pdma_chanid_rx >= 0) &&
-            (!(uint32_t)tx % bytes_per_word) &&
-            (!(uint32_t)rx % bytes_per_word) &&
-            (bytes_per_word != 3))
+            (!((uint32_t)tx % bytes_per_word)) &&
+            (!((uint32_t)rx % bytes_per_word)))
         nu_uspi_pdma_transmit(uspi_bus, tx, rx, length, bytes_per_word);
     else
         nu_uspi_transmission_with_poll(uspi_bus, tx, rx, length, bytes_per_word);
@@ -549,7 +534,7 @@ static rt_uint32_t nu_uspi_bus_xfer(struct rt_spi_device *device, struct rt_spi_
     if ((message->length % bytes_per_word) != 0)
     {
         /* Say bye. */
-        rt_kprintf("%s: error payload length(%d%%%d != 0).\n", uspi_bus->name, message->length, bytes_per_word);
+        LOG_E("%s: error payload length(%d%%%d != 0).\n", uspi_bus->name, message->length, bytes_per_word);
         return 0;
     }
 
@@ -608,7 +593,7 @@ static int rt_hw_uspi_init(void)
         {
             if (nu_hw_uspi_pdma_allocate(&nu_uspi_arr[i]) != RT_EOK)
             {
-                rt_kprintf("Failed to allocate DMA channels for %s. We will use poll-mode for this bus.\n", nu_uspi_arr[i].name);
+                LOG_E("Failed to allocate DMA channels for %s. We will use poll-mode for this bus.\n", nu_uspi_arr[i].name);
             }
         }
 #endif

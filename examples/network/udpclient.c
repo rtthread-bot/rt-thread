@@ -1,3 +1,12 @@
+/*
+ * Copyright (c) 2006-2021, RT-Thread Development Team
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Change Logs:
+ * Date           Author       Notes
+ */
+
 #include <rtthread.h>
 
 #include <sys/socket.h> /* 使用BSD socket，需要包含sockets.h头文件 */
@@ -89,7 +98,7 @@ static void usage(void)
     rt_kprintf("  -h           Specify host address\n");
     rt_kprintf("  -p           Specify the host port number\n");
     rt_kprintf("  --cnt        Specify the send data count\n");
-    rt_kprintf("  --stop       Stop tcpclient program\n");
+    rt_kprintf("  --stop       Stop udpclient program\n");
     rt_kprintf("  --help       Print help information\n");
 }
 

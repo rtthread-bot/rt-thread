@@ -17,14 +17,13 @@
 #include <rtthread.h>
 #include <rthw.h>
 #include <rtdevice.h>
-#include <NuMicro.h>
+#include "NuMicro.h"
 
 /* Private define ---------------------------------------------------------------*/
 #define LOG_TAG          "drv.softi2c"
 #define DBG_ENABLE
 #define DBG_SECTION_NAME LOG_TAG
 #define DBG_LEVEL        DBG_INFO
-#define DBG_COLOR
 #include <rtdbg.h>
 
 #ifdef BSP_USING_SOFT_I2C0
@@ -58,7 +57,7 @@ struct nu_soft_i2c_config
     rt_uint8_t sda;
     const char *bus_name;
 };
-/* soft i2c dirver class */
+/* soft i2c driver class */
 struct nu_soft_i2c
 {
     struct rt_i2c_bit_ops ops;
@@ -66,7 +65,6 @@ struct nu_soft_i2c
 };
 
 /* Private functions ------------------------------------------------------------*/
-static void nu_soft_i2c_udelay(rt_uint32_t us);
 static void nu_soft_i2c_set_sda(void *data, rt_int32_t state);
 static void nu_soft_i2c_set_scl(void *data, rt_int32_t state);
 static rt_int32_t nu_soft_i2c_get_sda(void *data);
@@ -92,47 +90,12 @@ static const struct rt_i2c_bit_ops nu_soft_i2c_bit_ops =
     .set_scl  = nu_soft_i2c_set_scl,
     .get_sda  = nu_soft_i2c_get_sda,
     .get_scl  = nu_soft_i2c_get_scl,
-    .udelay   = nu_soft_i2c_udelay,
+    .udelay   = rt_hw_us_delay,
     .delay_us = 1,
     .timeout  = 100
 };
 
 /* Functions define ------------------------------------------------------------*/
-
-/**
- * The time delay function.
- *
- * @param microseconds.
- */
-static void nu_soft_i2c_udelay(rt_uint32_t us)
-{
-    rt_uint32_t ticks;
-    rt_uint32_t told, tnow, tcnt = 0;
-    rt_uint32_t reload = SysTick->LOAD;
-
-    ticks = us * reload / (1000000 / RT_TICK_PER_SECOND);
-    told = SysTick->VAL;
-    while (1)
-    {
-        tnow = SysTick->VAL;
-        if (tnow != told)
-        {
-            if (tnow < told)
-            {
-                tcnt += told - tnow;
-            }
-            else
-            {
-                tcnt += reload - tnow + told;
-            }
-            told = tnow;
-            if (tcnt >= ticks)
-            {
-                break;
-            }
-        }
-    }
-}
 
 /**
  * This function initializes the soft i2c pin.
@@ -164,9 +127,9 @@ static rt_err_t nu_soft_i2c_bus_unlock(const struct nu_soft_i2c_config *cfg)
         while (i++ < 9)
         {
             rt_pin_write(cfg->scl, PIN_HIGH);
-            nu_soft_i2c_udelay(100);
+            rt_hw_us_delay(100);
             rt_pin_write(cfg->scl, PIN_LOW);
-            nu_soft_i2c_udelay(100);
+            rt_hw_us_delay(100);
         }
     }
     if (PIN_LOW == rt_pin_read(cfg->sda))

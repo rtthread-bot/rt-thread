@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2019, RT-Thread Development Team
+ * Copyright (c) 2006-2021, RT-Thread Development Team
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -295,6 +295,7 @@ static const struct rt_pin_ops ops =
     raspi_pin_attach_irq,
     raspi_pin_detach_irq,
     raspi_pin_irq_enable,
+    RT_NULL,
 };
 #endif
 

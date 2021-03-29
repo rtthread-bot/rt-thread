@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2018, RT-Thread Development Team
+ * Copyright (c) 2006-2021, RT-Thread Development Team
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -38,7 +38,6 @@ extern "C" {
 /*
  * kernel object interface
  */
-void rt_system_object_init(void);
 struct rt_object_information *
 rt_object_get_information(enum rt_object_class_type type);
 int rt_object_get_length(enum rt_object_class_type type);
@@ -74,11 +73,11 @@ void rt_object_put_sethook(void (*hook)(struct rt_object *object));
 /*
  * clock & timer interface
  */
-void rt_system_tick_init(void);
 rt_tick_t rt_tick_get(void);
 void rt_tick_set(rt_tick_t tick);
 void rt_tick_increase(void);
 rt_tick_t  rt_tick_from_millisecond(rt_int32_t ms);
+rt_tick_t rt_tick_get_millisecond(void);
 
 void rt_system_timer_init(void);
 void rt_system_timer_thread_init(void);
@@ -437,8 +436,6 @@ rt_err_t rt_device_unregister(rt_device_t dev);
 
 rt_device_t rt_device_create(int type, int attach_size);
 void rt_device_destroy(rt_device_t device);
-
-rt_err_t rt_device_init_all(void);
 
 rt_err_t
 rt_device_set_rx_indicate(rt_device_t dev,
