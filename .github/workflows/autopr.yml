@@ -1,0 +1,43 @@
+name: "auto sync gitee_master"
+on:
+  # Runs at 16:00 UTC (BeiJing 00:00) every day
+  schedule:
+    - cron:  '0 16 * * *'
+  push:
+    branches:
+      - master
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+            ssh-key: ${{ secrets.USER_SSH }}
+
+      - name: Set up Python
+        uses: actions/setup-python@master
+        with:
+          python-version: 3.8
+
+      - name: Install tools
+        shell: bash
+        env:
+            LOCAL_TOKEN: ${{ secrets.USER_TOKEN }}
+        run: |
+          echo $LOCAL_TOKEN > token.txt
+          wget -nv https://github.com/cli/cli/releases/download/v1.7.0/gh_1.7.0_linux_amd64.tar.gz
+          tar -zxvf  gh_1.7.0_linux_amd64.tar.gz
+          sudo chmod 777 gh_1.7.0_linux_amd64/bin/gh
+          gh_1.7.0_linux_amd64/bin/gh --version
+          gh_1.7.0_linux_amd64/bin/gh auth login --with-token < token.txt
+          echo  "GH_PATH=`pwd`/gh_1.7.0_linux_amd64/bin/gh" >> $GITHUB_ENV
+
+      - name: Create Pull Request
+        shell: bash
+        env:
+          USER_NAME: ${{ github.actor }}
+          USER_EMAIL: ${{ secrets.USER_EMAIL }}
+          BRANCH_NAME: "rtt_bot"
+        run: |
+          python .github/autopr.py
