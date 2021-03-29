@@ -72,7 +72,7 @@ class RttAutoPR:
             cmd = "{0} pr create --title '[update] RT-Thread Robot automatic submission' " \
                   "--body 'merge rt-thread gitee_master branch' " \
                   "--base master --head {1}:{2} " \
-                  "--repo RT-Thread/rt-thread > result.txt".format(self.gh, self.user_name, self.branch_name)
+                  "--repo RT-Thread/rt-thread".format(self.gh, self.user_name, self.branch_name)
             result = os.system(cmd)
             if result:
                 return 1
